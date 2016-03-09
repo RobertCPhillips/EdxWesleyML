@@ -1,0 +1,67 @@
+---
+title: "Kaggle Titanic CART Analysis"
+author: "Robert C Phillips"
+date: "February 3, 2016"
+output: html_document
+---
+
+This analysis uses the Titanic survivor data provided by Kaggle at http://www.kaggle.com/c/titanic/data.
+
+```{r}
+data <- read.csv("titanic_train.csv")
+```
+
+The Survived indicator is loaded as an integer by default.  Therefore we'll convert it to a factor.  We'll convert other categorical variables to factors as well.
+
+```{r}
+data$Survived <- as.factor(data$Survived)
+data$Pclass <- as.factor(data$Pclass)
+```
+
+We'll first consider a simple model based on Sex.  The following bar plot indicates that a majority of the survivors were female and a majority of the non-survivors were male
+
+```{r message=FALSE}
+require("ggplot2")
+
+g <- ggplot(data, aes(Survived))
+g + geom_bar(aes(fill = Sex))
+```
+
+Running a CART model using Sex yields the following tree.
+
+```{r message=FALSE}
+require(rpart)
+require(rpart.plot)
+
+model1 <- Survived ~ Sex
+
+# cart model
+cart1 <- rpart(model1, data=data, method="class")
+prp(cart1)
+
+cart1.predict <- predict(cart1, newdata=data, type="class")
+cart1.predict.t <- table(data$Survived, cart1.predict)
+cart1.acc <- (cart1.predict.t[1,1]+cart1.predict.t[2,2])/sum(cart1.predict.t)
+```
+
+As expected given the bar chart, this simple model yields a tree with obversations with Sex = female are mapped to the Survived class, whereas observations wtih Sex = mail are mapped to the not-Surived class.
+
+It's also worth noting that the accuracy of this model on the same data is `r cart1.acc`.
+
+For the next model, we'll consider age and Passenger Class as additional variables.  Note that the Passenger Class variable is a proxy for socio-economic status with 1 = 1st, 2 = 2nd, and 3 = 3rd.
+
+```{r message=FALSE}
+model2 <- Survived ~ Sex + Pclass + Age
+
+# cart model
+cart2 <- rpart(model2, data=data, method="class")
+prp(cart2)
+
+cart2.predict <- predict(cart2, newdata=data, type="class")
+cart2.predict.t <- table(data$Survived, cart2.predict)
+cart2.acc <- (cart2.predict.t[1,1]+cart2.predict.t[2,2])/sum(cart2.predict.t)
+```
+
+The accuracy of this model on the same data is `r cart2.acc`.
+
+This result shows a few things.  First, we see that very young males (less than 6.5 years old) were classified as surviving.  For females, surival is classified for those with a 1st or 2nd class.  This may indicate that these people had more access to the equipment providing safe exit. Furthermore, lower class females older than 38 were classified as not surviving. 

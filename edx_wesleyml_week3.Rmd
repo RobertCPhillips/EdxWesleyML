@@ -1,0 +1,155 @@
+---
+title: "Schooling and Wages LASSO Analysis"
+author: "Robert C Phillips"
+date: "February 20, 2016"
+output: html_document
+---
+
+###Introduction
+
+The purpose of this assignment is to run a lasso regression analysis using k-fold cross validation to identify a subset of predictors from a larger pool of predictor variables that best predicts the quantitative response variable. I am using R for this analysis as an additional challenge since Python and SAS solutions were already provided within the lectures.
+
+For this analysis I am using the "Wages and Schooling " dataset provided here: http://vincentarelbundock.github.io/Rdatasets/doc/Ecdat/Schooling.html.
+
+```{r}
+data <- read.csv("Schooling.csv")
+```
+
+The variables included in this dataset are:
+
+* X: observation identifier
+* smsa66: lived in smsa in 1966 ?
+* smsa76: lived in smsa in 1976 ?
+* nearc2: grew up near 2-yr college ?
+* nearc4: grew up near 4-yr college ?
+* nearc4a: grew up near 4-year public college ?
+* nearc4b: grew up near 4-year private college ?
+* ed76: education in 1976
+* ed66: education in 1966
+* age76: age in 1976
+* daded: dads education (imputed avg if missing)
+* nodaded: dads education imputed ?
+* momed: mothers education
+* nomomed: moms education imputed ?
+* momdad14: lived with mom and dad at age 14 ?
+* sinmom14: single mom at age 14 ?
+* step14: step parent at age 14 ?
+* south66: lived in south in 1966 ?
+* south76: lived in south in 1976 ?
+* lwage76: log wage in 1976 (outliers trimmed)
+* famed: mom-dad education class (1-9)
+* black: black ?
+* wage76: wage in 1976 (raw, cents per hour)
+* enroll76: enrolled in 1976 ?
+* kww: the kww score
+* iqscore: a normed IQ score
+* mar76: married in 1976 ?
+* libcrd14: library card in home at age 14 ?
+* exp76: experience in 1976
+
+The target variable for this analysis will be the **wage76** variable.
+
+###Exploratory Analysis
+
+Summarizing the data indcates the varables **kww**, **iqscore**, **mar76** and **libcrd14** contain missing values.  
+
+```{r}
+summary(data)
+```
+
+One of the goals of LASSO is to aid in model selection by indicating the subset of variables that best predict the target.  Therefore we don't want to remove variables for this initial analysis. 
+
+The variable **iqscore** would be interesting to include, but is missing for almost 1/3 of the observations.  The other variables have a low number of missing values, therefore we'll filter out those observations so that we can include them in the LASSO analysis.
+
+```{r}
+#remove the iqscore variable
+data$iqscore <- NULL
+
+#remove observations with NA values
+data <- na.omit(data) 
+```
+
+Additionally, all quantitative variables to be used as a predictor appear to be on the same scale, thefore no preprocessing is necessary.
+
+###LASSO Analysis
+
+We will use the **glmnet** package in R for this analysis.  This method requires a matrix for the predictors and a seperate vector for the target variable.  We will establish those items as the variables X and Y. Furthermore, we need to split the data into a training and test set.
+
+```{r}
+#define the model with wage76 as the target
+model1 <- wage76 ~ smsa66 + smsa76 + nearc2 + nearc4 + nearc4a + nearc4b + ed76 + ed66 + age76 +
+                   daded + nodaded + momed + nomomed + momdad14 + sinmom14 + step14 + south66 + south76 + 
+                   famed + black + enroll76 + kww + mar76 + libcrd14 + exp76
+
+#build the matrix and vector required by glmnet
+X <- model.matrix(model1, data)[,-1] 
+Y <- data$wage76
+
+#split into training and test sets
+set.seed(1972)
+train.rows <- sample(1:nrow(X), nrow(X) / 2)
+test.rows <- (-train.rows)
+
+X.train <- X[train.rows,]
+Y.train <- Y[train.rows]
+
+X.test <- X[test.rows,]
+Y.test <- Y[test.rows]
+```
+
+Now that we have our training and test data we can run the LASSO analysis.  We first build the LASSO model and review the coefficient plot.
+
+```{r, message=F}
+require(glmnet)
+
+#alpha = 1 for LASSO
+lasso1 <- glmnet(X.train, Y.train , alpha=1)
+plot(lasso1)
+```
+
+We can then use cross-validation to determine an optimal value of lambda.  This also allows us to review how the MSE changes as lambda changes.
+
+```{r}
+set.seed(1990) 
+lasso1.cv <- cv.glmnet(X.train, Y.train, alpha=1)
+plot(lasso1.cv)
+```
+
+We can use the optimal value of lambda to perform prediction.
+
+```{r}
+#use the minimum lambda value for prediction and calculate the MSE
+lasso1.lambda <- lasso1.cv$lambda.min 
+lasso1.pred <- predict(lasso1, s=lasso1.lambda, newx=X.test)
+lasso1.mse <- mean((lasso1.pred - Y.test)^2)
+```
+
+A lambda value of **`r lasso1.lambda`** yields a MSE of **`r round(lasso1.mse, 0)`**.
+
+We can also review the coefficients using this value of lambda.
+
+```{r}
+#get the coefficients for the best lambda value
+lasso1.coef <- predict(lasso1, type="coefficients", s=lasso1.lambda)[1:20,]
+lasso1.coef
+
+```
+
+The result is that the coefficients for the variables **nearc4(yes)**, **nodaded(yes)**, **nomomed(yes)**, **sinmom14(yes)**, **south66(yes)**, and **famed** are set to 0, indicating they may not be good predictors.  Furthermore, variables such as **smsa76(yes)**, **nearc2(yes)**, **ed66**, and **momdad14(yes)** have a positive impact on wages whereas the variables **south76(yes)**, **step14(yes)**, **nearc4b(yes)** appear to have a negative impact on wages.
+
+###Summary
+The LASSO approach quickly provides a subset of variables that may be best for prediction.  Using standard linear regression may have required numerous runs and analysis to arrive an optimal subset of predictors.  
+
+For fun, let's use the noted non-zero coefficents in a linar model.
+
+```{r}
+model2 <- wage76 ~ smsa76 + nearc2 + ed66 + momdad14 + south76 + step14 + nearc4b
+
+fit1 <- lm(model2, data[train.rows,])
+summary(fit1)
+
+fit1.pred <- predict(fit1, data[test.rows,])
+fit1.mse <- mean((fit1.pred - data[test.rows,"wage76"])^2)
+```
+
+This model yields an MSE of **`r fit1.mse`** which is higher than the LASSO model.  Also interesting is that both models are consistent in indicating which variables have a positive impact and which have a negative impact.  However, variables such as **step14** and **nearc4** have high p-values which indicates they may not be useful in the model.  All of this information can be used in subsequent analysis and model building.

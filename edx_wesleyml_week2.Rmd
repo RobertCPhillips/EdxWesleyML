@@ -1,0 +1,109 @@
+---
+title: "Kaggle Titanic Random Forest Analysis"
+author: "Robert C Phillips"
+date: "February 10, 2016"
+output: html_document
+---
+
+This analysis uses the Titanic survivor data provided by Kaggle at http://www.kaggle.com/c/titanic/data.
+
+```{r}
+data <- read.csv("titanic_train.csv")
+```
+
+The Survived indicator is loaded as an integer by default.  Therefore we'll convert it to a factor.  We'll convert other categorical variables to factors as well.
+
+```{r}
+data$Survived <- as.factor(data$Survived)
+data$Pclass <- as.factor(data$Pclass)
+```
+
+We'll first consider a simple model based on Sex.  The following bar plot indicates that a majority of the survivors were female and a majority of the non-survivors were male
+
+```{r message=FALSE}
+require("ggplot2")
+
+g <- ggplot(data, aes(Survived))
+g + geom_bar(aes(fill = Sex))
+```
+
+Running a Random Forest model using Sex yields the following results.
+
+```{r message=FALSE}
+require(randomForest)
+
+model1 <- Survived ~ Sex
+
+# random forest model
+set.seed(1020)
+forest1 <- randomForest(model1, data=data, method="class")
+
+forest1.predict <- predict(forest1, newdata=data, type="class")
+forest1.acc <- (forest1$confusion[1,1]+forest1$confusion[2,2])/sum(forest1$confusion[,c(1,2)])
+```
+
+The accuracy of this model on the same data is `r forest1.acc`.  The resulting confusion matrix and variables of importance are as follows.
+
+```{r}
+forest1$confusion
+forest1$importance
+```
+
+As expected given the bar chart, this simple model yields a confusion matrix where most of the error is on Sex = male.
+
+For the next model, we'll consider age and Passenger Class as additional variables.  Note that the Passenger Class variable is a proxy for socio-economic status with 1 = 1st, 2 = 2nd, and 3 = 3rd.
+
+The following barplot shows the distribution of survivle over class.
+
+```{r message=FALSE}
+g <- ggplot(data, aes(Survived))
+g + geom_bar(aes(fill = Pclass))
+```
+
+```{r message=FALSE}
+model2 <- Survived ~ Sex + Pclass + Age
+
+#use impute to fill in missing age values
+data.imp <- rfImpute(model2, data)
+
+# random forest model
+set.seed(999)
+forest2 <- randomForest(model2, data=data.imp, method="class")
+
+forest2.predict <- predict(forest2, newdata=data.imp, type="class")
+forest2.acc <- (forest2$confusion[1,1]+forest2$confusion[2,2])/sum(forest2$confusion[,c(1,2)])
+```
+
+The accuracy of this model on the same data is `r forest2.acc`. The resulting confusion matrix and variables of importance are as follows.
+
+```{r}
+forest2$confusion
+forest2$importance
+```
+
+While our overall accuracy has modestly improved, we are still misclassifying a large number of passengers as survived.  In this model, we also find that class appears to be more important variable than age. 
+
+For third model, we'll add sibling and parent-child features, as well as fare.
+
+```{r message=FALSE}
+model3 <- Survived ~ Sex + Fare + Age + Pclass + Parch + SibSp
+
+#use impute to fill in missing age values
+data.imp <- rfImpute(model3, data)
+
+# random forest model
+set.seed(9992)
+forest3 <- randomForest(model3, data=data.imp, method="class")
+
+forest3.predict <- predict(forest3, newdata=data.imp, type="class")
+forest3.acc <- (forest3$confusion[1,1]+forest3$confusion[2,2])/sum(forest3$confusion[,c(1,2)])
+```
+
+The accuracy of this model on the same data is `r forest3.acc`. The resulting confusion matrix and variables of importance are as follows.
+
+```{r}
+forest3$confusion
+forest3$importance
+```
+
+Once again, our accuracy has improved.  In this model, we see that Fare is a more important variable than all of the others we have tried (except for Sex).
